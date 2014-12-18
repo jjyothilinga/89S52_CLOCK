@@ -1,0 +1,8 @@
+".\output\STARTUP.obj",
+".\output\app.obj",
+".\output\digit_display.obj",
+".\output\HB.obj",
+".\output\main.obj",
+".\output\timer.obj" 
+TO ".\output\clock_1307" 
+PRINT(".\listings\clock_1307.m51") RAMSIZE(256) 

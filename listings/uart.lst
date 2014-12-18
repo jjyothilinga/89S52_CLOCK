@@ -1,0 +1,301 @@
+C51 COMPILER V9.52.0.0   UART                                                              12/18/2014 10:51:42 PAGE 1   
+
+
+C51 COMPILER V9.52.0.0, COMPILATION OF MODULE UART
+OBJECT MODULE PLACED IN .\output\uart.obj
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE source\uart.c BROWSE INCDIR(.\include) DEBUG OBJECTEXTEND PRINT(.\listings\
+                    -uart.lst) TABS(2) OBJECT(.\output\uart.obj)
+
+line level    source
+
+   1          #include "uart_priv.h"
+   2          #include "uart.h"
+   3          
+   4          /*
+   5          * the uart structure
+   6          */
+   7          
+   8          typedef struct
+   9          {
+  10            UART_STATE state;
+  11            UART_ERROR rxError;
+  12            UART_ERROR txError;
+  13                         
+  14            UINT8 rxBuff[UART_BUFF_LEN];
+  15            UINT8 rxBuffIndex;
+  16            UINT8 rxDataIndex;
+  17            UINT8 rxDataCount;
+  18          
+  19            UINT8 txBuff[UART_BUFF_LEN];
+  20            UINT8 txBuffIndex;
+  21            UINT8 txDataIndex;
+  22            UINT8 txDataCount;
+  23          
+  24          }UART;
+  25          
+  26          
+  27          static data UART uart = { UART_CLOSED , UART_VOID , {0} , 0 , 0 ,0 ,{0} , 0 , 0 ,0};
+  28          
+  29          /*
+  30          *------------------------------------------------------------------------------
+  31          * RESULT_STATUS UART_open (void)
+  32          *
+  33          * Summary : sets up the UART mode , baud rate generator and enables the uart interrupt
+  34                : using UART in mode 1 [ 8 data bits + 1 stop bit ]
+  35                : using TIMER-1(in mode 2 )  to generate a baud rate of 9600bps
+  36          *
+  37          * Input   : None
+  38          *
+  39          * Output  : RESULT_STATUS - SUCCESS if able to set up uart
+  40          *
+  41          *------------------------------------------------------------------------------
+  42          */
+  43          RESULT UART_open(void)
+  44          {
+  45   1        if( uart.state == UART_OPEN )
+  46   1        {
+  47   2          return FAILURE;
+  48   2        }
+  49   1      
+  50   1          SCON = 0x50;          // Setup serial port control 
+  51   1          TMOD |= 0x20;         // Set timer1 mode2 auto reload mode  
+  52   1      
+  53   1          TH1 =  0xfd;          // Set 9600 buad
+  54   1        
+C51 COMPILER V9.52.0.0   UART                                                              12/18/2014 10:51:42 PAGE 2   
+
+  55   1      
+  56   1        TI = 0;           // Clear transmit interrupt flag
+  57   1        RI = 0;           // Clear receive interrupt flag
+  58   1        ES = 1;           // Enable serial interrupt
+  59   1      
+  60   1        TR1 = 1;          // Start timer1  i.e baud rate generator
+  61   1      
+  62   1        uart.state  = UART_OPEN;
+  63   1        return SUCCESS;
+  64   1      }
+  65          
+  66          
+  67          
+  68          /*
+  69          *------------------------------------------------------------------------------
+  70          * UINT8 UART_rxDataCount (void)
+  71          *
+  72          * Summary : returns the recieved data count
+  73          *
+  74          * Input   : None
+  75          *
+  76          * Output  : UINT8 - rx char count
+  77          *
+  78          *------------------------------------------------------------------------------
+  79          */
+  80          UINT8 UART_rxDataCount (void)
+  81          {
+  82   1        UINT8 dataCount ;
+  83   1        ENTER_CRITICAL_SERIAL_INTERRUPT();
+  84   1        dataCount = uart.rxDataCount;
+  85   1        EXIT_CRITICAL_SERIAL_INTERRUPT();
+  86   1        return dataCount;
+  87   1      }
+  88          
+  89          /*
+  90          *------------------------------------------------------------------------------
+  91          * UINT8 UART_read (void)
+  92          *
+  93          * Summary : returns the data from the rx buffer
+  94          *
+  95          * Input   : None
+  96          *
+  97          * Output  : UINT8 - the data from the rx buffer
+  98          *
+  99          *------------------------------------------------------------------------------
+ 100          */
+ 101          
+ 102          UINT8 UART_read (void)
+ 103          {
+ 104   1        UINT8 rxData;
+ 105   1      
+ 106   1        ENTER_CRITICAL_SERIAL_INTERRUPT();
+ 107   1        if( uart.rxDataCount == 0 )
+ 108   1        {
+ 109   2          uart.rxError = UART_UNDERFLOW;
+ 110   2        }
+ 111   1        rxData = uart.rxBuff[uart.rxDataIndex++];
+ 112   1        --(uart.rxDataCount);
+ 113   1        if(uart.rxDataIndex >= UART_BUFF_LEN )
+ 114   1        {
+ 115   2          uart.rxDataIndex = 0;
+ 116   2        }
+C51 COMPILER V9.52.0.0   UART                                                              12/18/2014 10:51:42 PAGE 3   
+
+ 117   1        EXIT_CRITICAL_SERIAL_INTERRUPT();
+ 118   1      
+ 119   1        return rxData;
+ 120   1      }
+ 121          
+ 122          
+ 123          /*
+ 124          *------------------------------------------------------------------------------
+ 125          * void UART_write (UINT8 )
+ 126          *
+ 127          * Summary : stores the data for transmission and initiates transmission if necessary
+ 128          *
+ 129          * Input   : UINT8 - the data to be stored in the tx buffer
+ 130          *
+ 131          * Output  : None
+ 132          *
+ 133          *------------------------------------------------------------------------------
+ 134          */
+ 135          
+ 136          void UART_write (UINT8 txData )
+ 137          {
+ 138   1      
+ 139   1      #if 0
+                SBUF = txData;
+                while(!TI);
+                TI = 0;
+              
+              #else 
+ 145   1        ENTER_CRITICAL_SERIAL_INTERRUPT();
+ 146   1        if( uart.txDataCount >= UART_BUFF_LEN )
+ 147   1        {
+ 148   2          uart.txError = UART_OVERFLOW;
+ 149   2        }
+ 150   1        uart.txBuff[uart.txBuffIndex++] = txData;
+ 151   1        if(uart.txBuffIndex >= UART_BUFF_LEN )
+ 152   1        {
+ 153   2          uart.txBuffIndex = 0;
+ 154   2        }
+ 155   1        uart.txDataCount++;
+ 156   1      
+ 157   1        //initiate transmission if character count is 1
+ 158   1        if( uart.txDataCount == 1 )
+ 159   1        {
+ 160   2          if( !TI)
+ 161   2          {
+ 162   3            SBUF = uart.txBuff[uart.txDataIndex++];
+ 163   3            if( uart.txDataIndex >= UART_BUFF_LEN)
+ 164   3              uart.txDataIndex = 0;
+ 165   3          }
+ 166   2        }
+ 167   1      
+ 168   1      
+ 169   1        EXIT_CRITICAL_SERIAL_INTERRUPT();
+ 170   1      #endif
+ 171   1      }
+ 172          
+ 173          
+ 174          
+ 175          void UART_writeString( UINT8* string )
+ 176          {
+ 177   1         UINT8 i = 0;
+ 178   1         while( string[i] != '\0')
+C51 COMPILER V9.52.0.0   UART                                                              12/18/2014 10:51:42 PAGE 4   
+
+ 179   1         {
+ 180   2          UART_write(string[i++]);
+ 181   2         }
+ 182   1      
+ 183   1      }
+ 184          
+ 185          
+ 186          
+ 187          
+ 188          /*
+ 189          *------------------------------------------------------------------------------
+ 190          * RESULT UART_close (void )
+ 191          *
+ 192          * Summary : stores the data for transmission and initiates transmission if necessary
+ 193          *
+ 194          * Input   : UINT8 - the data to be stored in the tx buffer
+ 195          *
+ 196          * Output  : None
+ 197          *
+ 198          *------------------------------------------------------------------------------
+ 199          */
+ 200          
+ 201          RESULT UART_close (void )
+ 202          {
+ 203   1        TR1 = 0;          // Start timer1 
+ 204   1      
+ 205   1        TI = 0;           // Clear transmit interrupt flag
+ 206   1        RI = 0;           // Clear receive interrupt flag
+ 207   1        ES = 0;           // Enable serial interrupt
+ 208   1      
+ 209   1        uart.state  = UART_CLOSED;
+ 210   1      
+ 211   1        return SUCCESS;
+ 212   1      }
+ 213          
+ 214          
+ 215          
+ 216          
+ 217          
+ 218          /*
+ 219          *------------------------------------------------------------------------------
+ 220          * void UART_intrHandler (void)
+ 221          *
+ 222          * Summary : Uart interrupt Handler
+ 223          *
+ 224          * Input   : None
+ 225          *
+ 226          * Output  : None
+ 227          *
+ 228          *------------------------------------------------------------------------------
+ 229          */
+ 230          static void UART_intrHandler (void) interrupt SIO_VECTOR using 2   // use registerbank 2 for interrupt
+ 231          {
+ 232   1        UINT8 rxChar;
+ 233   1          if (RI)                           // if receiver interrupt
+ 234   1          {
+ 235   2          rxChar = SBUF;
+ 236   2          uart.rxBuff[uart.rxBuffIndex++] = rxChar;
+ 237   2          if( uart.rxBuffIndex >= UART_BUFF_LEN )
+ 238   2          {                           
+ 239   3            uart.rxBuffIndex = 0;
+ 240   3          }
+C51 COMPILER V9.52.0.0   UART                                                              12/18/2014 10:51:42 PAGE 5   
+
+ 241   2          uart.rxDataCount++;
+ 242   2          if( uart.rxDataCount >= UART_BUFF_LEN )
+ 243   2          {
+ 244   3            uart.rxError = UART_OVERFLOW;
+ 245   3          }
+ 246   2          RI = 0;       //reset interrupt flag
+ 247   2        }
+ 248   1      #if 1 
+ 249   1        if ( TI )       // if transmitter interrupt
+ 250   1        {
+ 251   2      
+ 252   2          TI = 0;         //reset interrupt flag
+ 253   2      
+ 254   2          --uart.txDataCount;
+ 255   2      
+ 256   2          if( uart.txDataCount > 0 )
+ 257   2          {
+ 258   3            SBUF = uart.txBuff[uart.txDataIndex++];
+ 259   3            if( uart.txDataIndex >= UART_BUFF_LEN )
+ 260   3            {
+ 261   4              uart.txDataIndex = 0;
+ 262   4            }
+ 263   3          }
+ 264   2      
+ 265   2      
+ 266   2        }
+ 267   1      #endif
+ 268   1      }
+ 269          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    280    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     45       3
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
